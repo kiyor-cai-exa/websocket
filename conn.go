@@ -244,6 +244,7 @@ type Conn struct {
 	subprotocol string
 
 	// Write fields
+	locker        *sync.Mutex
 	mu            chan struct{} // used as mutex to protect write to conn
 	writeBuf      []byte        // frame is constructed in this buffer.
 	writePool     BufferPool
@@ -319,6 +320,8 @@ func newConn(conn net.Conn, isServer bool, readBufferSize, writeBufferSize int, 
 	c.SetCloseHandler(nil)
 	c.SetPingHandler(nil)
 	c.SetPongHandler(nil)
+	c.locker = &sync.Mutex{}
+
 	return c
 }
 
@@ -606,6 +609,7 @@ func (w *messageWriter) flushFrame(final bool, extra []byte) error {
 	// concurrent writes. See the concurrency section in the package
 	// documentation for more info.
 
+	c.locker.Lock()
 	if c.isWriting {
 		panic("concurrent write to websocket connection")
 	}
@@ -617,6 +621,7 @@ func (w *messageWriter) flushFrame(final bool, extra []byte) error {
 		panic("concurrent write to websocket connection")
 	}
 	c.isWriting = false
+	c.locker.Unlock()
 
 	if err != nil {
 		return w.endMessage(err)
@@ -734,6 +739,7 @@ func (c *Conn) WritePreparedMessage(pm *PreparedMessage) error {
 	if err != nil {
 		return err
 	}
+	c.locker.Lock()
 	if c.isWriting {
 		panic("concurrent write to websocket connection")
 	}
@@ -743,6 +749,7 @@ func (c *Conn) WritePreparedMessage(pm *PreparedMessage) error {
 		panic("concurrent write to websocket connection")
 	}
 	c.isWriting = false
+	c.locker.Unlock()
 	return err
 }
 
